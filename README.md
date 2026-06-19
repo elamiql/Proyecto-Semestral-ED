@@ -6,10 +6,14 @@
 Proyecto_ED/
 ├── data/           # Datasets
 ├── docs/           # Informe y documentos
+├── experiments/
+│   └── benchmark.cpp # Experimento para las métricas
 ├── include/
-│   └── Graph.hpp   # Interfaz del ADT Grafo
+│   ├── Graph.hpp   # Interfaz del ADT Grafo
+│   └── Graphloader.hpp # Parsers para datasets
 ├── src/
 │   ├── Graph.cpp   # Implementación del ADT Grafo
+│   ├── Graphloader.cpp # Implementacion de parsers
 │   ├── Metrics.cpp # Las 7 medidas de centralidad
 │   └── main.cpp    # Carga de datasets y tests
 ├── experiments/
@@ -22,6 +26,14 @@ Proyecto_ED/
 
 ```bash
 make
+proyecto_ed.exe
+make clean
+```
+
+o
+
+```bash
+make
 ./proyecto_ed
 make clean
 ```
@@ -30,8 +42,15 @@ o
 
 ```bash
 mingw32-make
-./proyecto_ed
+proyecto_ed.exe
 mingw32-make clean
+```
+
+o
+
+```bash
+g++ -std=c++17 -Wall -Wextra -O2 -Iinclude src\Graph.cpp src\GraphLoader.cpp src\main.cpp -o proyecto_ed.exe
+proyecto_ed.exe
 ```
 
 ## Integrantes
