@@ -1,0 +1,5 @@
+data/
+build/
+proyecto_ed.exe
+*.o
+.DS_Store
