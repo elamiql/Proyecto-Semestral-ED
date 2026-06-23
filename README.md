@@ -10,10 +10,10 @@ Proyecto_ED/
 │   └── benchmark.cpp # Experimento para las métricas
 ├── include/
 │   ├── Graph.hpp   # Interfaz del ADT Grafo
-│   └── Graphloader.hpp # Parsers para datasets
+│   └── GraphLoader.hpp # Parsers para datasets
 ├── src/
 │   ├── Graph.cpp   # Implementación del ADT Grafo
-│   ├── Graphloader.cpp # Implementacion de parsers
+│   ├── GraphLoader.cpp # Implementacion de parsers
 │   ├── Metrics.cpp # Las 7 medidas de centralidad
 │   └── main.cpp    # Carga de datasets y tests
 ├── experiments/
@@ -52,6 +52,16 @@ o
 g++ -std=c++17 -Wall -Wextra -O2 -Iinclude src\Graph.cpp src\GraphLoader.cpp src\main.cpp -o proyecto_ed.exe
 proyecto_ed.exe
 ```
+
+## Métricas disponibles
+
+- `degreeCentrality`
+- `betweennessCentrality`
+- `closenessCentrality`
+- `pageRank`
+- `averageShortestPath`
+- `localClusteringCoefficient`
+- `diametro`
 
 ## Integrantes
 
