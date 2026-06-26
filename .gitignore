@@ -1,4 +1,4 @@
 build/
-proyecto_ed.exe
+*.exe
 *.o
 .DS_Store
