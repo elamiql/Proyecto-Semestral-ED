@@ -1,65 +1,149 @@
-#include "../include/Graph.hpp"
-#include "../include/GraphLoader.hpp"
-#include "benchmark.hpp"
-#include <iostream>
+#include "../include/benchmark.hpp"
+#include "../include/Metrics.hpp"
 #include <chrono>
+#include <cmath>
+#include <iomanip>
+#include <iostream>
+#include <numeric>
 
-int main() {
-    // Rutas relativas a tus dos datasets reales en formato Pajek (.net)
-    const std::string tradePath   = "data/2018.net.csv";
-    const std::string sciencePath = "data/NetScience.net.csv";
+#ifdef __linux__
+#include <fstream>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
 
-    std::cout << "==================================================\n";
-    std::cout << " BENCHMARK INICIAL: VELOCIDAD DE CARGA Y MEMORIA   \n";
-    std::cout << "==================================================\n";
+namespace Benchmark {
 
-    
-    long long memBeforeTrade = Benchmark::getMemoryUsageKB();
-    auto startTrade = std::chrono::high_resolution_clock::now();
-    
-    
-    Graph g_trade = GraphLoader::loadPajekNet(tradePath, true);
-    
-    auto endTrade = std::chrono::high_resolution_clock::now();
-    long long memAfterTrade = Benchmark::getMemoryUsageKB();
-    double timeTrade = std::chrono::duration<double, std::milli>(endTrade - startTrade).count();
+MetricStats calculateStats(const std::vector<double> &times) {
+    if (times.empty())
+        return {0.0, 0.0};
+    double sum = std::accumulate(times.begin(), times.end(), 0.0);
+    double mean = sum / times.size();
 
-    std::cout << "Dataset: Comercio Internacional (2018)\n";
-    std::cout << "  - Tiempo de construcción: " << timeTrade << " ms\n";
-    if (memBeforeTrade != -1 && memAfterTrade != -1) {
-        std::cout << "  - Asignación de RAM:      " << (memAfterTrade - memBeforeTrade) / 1024.0 << " MB\n";
+    double varianceSum = 0.0;
+    for (double t : times) {
+        varianceSum += (t - mean) * (t - mean);
     }
-    std::cout << "--------------------------------------------------\n";
-
-    
-    long long memBeforeScience = Benchmark::getMemoryUsageKB();
-    auto startScience = std::chrono::high_resolution_clock::now();
-    
-    Graph g_science = GraphLoader::loadPajekNet(sciencePath, false);
-    
-    auto endScience = std::chrono::high_resolution_clock::now();
-    long long memAfterScience = Benchmark::getMemoryUsageKB();
-    double timeScience = std::chrono::duration<double, std::milli>(endScience - startScience).count();
-
-    std::cout << "Dataset: Red de Coautorías Científicas (NetScience)\n";
-    std::cout << "  - Tiempo de construcción: " << timeScience << " ms\n";
-    if (memBeforeScience != -1 && memAfterScience != -1) {
-        std::cout << "  - Asignación de RAM:      " << (memAfterScience - memBeforeScience) / 1024.0 << " MB\n";
-    }
-    std::cout << "--------------------------------------------------\n";
-
-
-    
-    std::cout << "\n>>> ANALIZANDO GRAFO 1: COMERCIO INTERNACIONAL <<<\n";
-    Benchmark::runMetricsBenchmark("Trade Network 2018", g_trade);
-    Benchmark::runPerturbations("Trade Network 2018", g_trade);
-
-    std::cout << "\n==================================================\n";
-
-    
-    std::cout << "\n>>> ANALIZANDO GRAFO 2: COLABORACIÓN CIENTÍFICA <<<\n";
-    Benchmark::runMetricsBenchmark("NetScience Co-authorship", g_science);
-    Benchmark::runPerturbations("NetScience Co-authorship", g_science);
-
-    return 0;
+    double variance =
+        (times.size() > 1) ? varianceSum / (times.size() - 1) : 0.0;
+    return {mean, variance};
 }
+
+void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
+    std::cout << "\n==================================================\n";
+    std::cout << " CRONOMETRANDO 7 MÉTRICAS: " << datasetName << "\n";
+    std::cout << "==================================================\n";
+    std::cout << "Nodos (V): " << graph.getNumVertices()
+              << " | Aristas (E): " << graph.getNumEdges() << "\n\n";
+
+    // SALVAVIDAS DE CPU:
+    const int RUNS_FAST = 10;
+    const int RUNS_HEAVY = (graph.getNumVertices() > 5000) ? 3 : 10;
+
+    std::vector<std::pair<std::string, MetricStats>> finalReport;
+
+    // 1. Degree Centrality (Rápida)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_FAST; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto res =
+                Metrics::degreeCentrality(graph, Metrics::DegreeMode::Total);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back({"Degree Centrality", calculateStats(times)});
+    }
+
+    // 2. Betweenness Centrality (Lenta)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_HEAVY; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto res = Metrics::betweennessCentrality(graph);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back(
+            {"Betweenness Centrality", calculateStats(times)});
+    }
+
+    // 3. Closeness Centrality (Lenta)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_HEAVY; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto res = Metrics::closenessCentrality(graph);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back({"Closeness Centrality", calculateStats(times)});
+    }
+
+    // 4. PageRank (Rápida)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_FAST; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto res = Metrics::pageRank(graph, 0.85, 100, 1e-6);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back({"PageRank", calculateStats(times)});
+    }
+
+    // 5. Average Shortest Path (Lenta)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_HEAVY; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            double res = Metrics::averageShortestPath(graph);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back({"Average Shortest Path", calculateStats(times)});
+    }
+
+    // 6. Local Clustering Coefficient (Rápida)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_FAST; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto res = Metrics::localClusteringCoefficient(graph);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back(
+            {"Local Clustering Coeff.", calculateStats(times)});
+    }
+
+    // 7. Diámetro (Lenta)
+    {
+        std::vector<double> times;
+        for (int i = 0; i < RUNS_HEAVY; ++i) {
+            auto start = std::chrono::high_resolution_clock::now();
+            double res = Metrics::diametro(graph);
+            auto end = std::chrono::high_resolution_clock::now();
+            times.push_back(
+                std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        finalReport.push_back({"Diámetro de la Red", calculateStats(times)});
+    }
+
+    std::cout << "| Métrica | Tiempo Promedio (ms) | Varianza (ms²) |\n";
+    std::cout << "| :--- | :---: | :---: |\n";
+    for (const auto &entry : finalReport) {
+        std::cout << "| " << std::left << std::setw(26) << entry.first << " | "
+                  << std::fixed << std::setprecision(4) << std::setw(20)
+                  << entry.second.mean << " | " << std::setw(14)
+                  << entry.second.variance << " |\n";
+    }
+}
+
+} // namespace Benchmark
