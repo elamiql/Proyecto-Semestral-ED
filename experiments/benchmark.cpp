@@ -1,4 +1,4 @@
-// experiments/benchmark.cpp
+
 #include "../include/Graph.hpp"
 #include "../include/GraphLoader.hpp"
 #include "benchmark.hpp"
