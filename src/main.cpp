@@ -7,12 +7,14 @@
 #include "../include/benchmark.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <windows.h>
+#include <psapi.h>
 
 // Helpers locales
 static void printSeparator(char c = '-', int width = 52) {
@@ -25,7 +27,6 @@ static void section(const std::string &title) {
     printSeparator('=');
 }
 
-// Mide tiempo + RAM de construcción
 struct LoadResult {
     Graph graph;
     double timeMs;
@@ -62,8 +63,7 @@ static LoadResult measureLoad(const std::string &label, LoadFn fn) {
 }
 
 // ============================================================================
-// PERTURBACIONES OPTIMIZADAS (Salvavidas de CPU)
-// Solo calcula métricas rápidas (O(V+E)) para no colgar el pc.
+// PERTURBACIONES
 // ============================================================================
 
 struct NetSnapshot {
@@ -89,22 +89,25 @@ static NetSnapshot takeSnapshot(const Graph &g) {
             n > 0 ? sumCc / n : 0.0};
 }
 
+static std::string formatDelta(double base, double after) {
+    double diff = after - base;
+    if (std::fabs(diff) < 1e-9)
+        return "≈ 0";
+    std::ostringstream os;
+    os << std::scientific << std::setprecision(3) << (diff >= 0 ? "+" : "")
+       << diff;
+    return os.str();
+}
+
 static void printDelta(const std::string &action, const NetSnapshot &base,
                        const NetSnapshot &after) {
-    auto d = [](double a, double b) -> std::string {
-        double diff = b - a;
-        std::ostringstream os;
-        os << std::fixed << std::setprecision(6) << (diff >= 0 ? "+" : "")
-           << diff;
-        return os.str();
-    };
     std::cout << "  [" << action << "]\n";
-    std::cout << "    ΔDeg (mean)   : " << d(base.avgDegree, after.avgDegree)
-              << "\n";
+    std::cout << "    ΔDeg (mean)   : "
+              << formatDelta(base.avgDegree, after.avgDegree) << "\n";
     std::cout << "    ΔPageRank     : "
-              << d(base.avgPagerank, after.avgPagerank) << "\n";
+              << formatDelta(base.avgPagerank, after.avgPagerank) << "\n";
     std::cout << "    ΔClustering   : "
-              << d(base.avgClustering, after.avgClustering) << "\n";
+              << formatDelta(base.avgClustering, after.avgClustering) << "\n";
 }
 
 static void runExtendedPerturbations(const std::string &datasetName, Graph &g) {
@@ -116,8 +119,12 @@ static void runExtendedPerturbations(const std::string &datasetName, Graph &g) {
         return;
     }
 
-    int hubIdx = 0, periIdx = 0, midIdx = n / 2;
-    int maxDeg = -1, minDeg = INT_MAX;
+    int hubIdx = -1;
+    int periIdx = -1;
+    int midIdx = -1;
+
+    int maxDeg = -1;
+    int minDeg = INT_MAX;
 
     for (int i = 0; i < n; i++) {
         int d = g.degree(i);
@@ -125,10 +132,29 @@ static void runExtendedPerturbations(const std::string &datasetName, Graph &g) {
             maxDeg = d;
             hubIdx = i;
         }
-        if (d < minDeg) {
+        if (d > 0 && d < minDeg) {
             minDeg = d;
             periIdx = i;
         }
+    }
+
+    midIdx = n / 2;
+    if (g.degree(midIdx) == 0) {
+        for (int offset = 1; offset < n; offset++) {
+            if (midIdx + offset < n && g.degree(midIdx + offset) > 0) {
+                midIdx = midIdx + offset;
+                break;
+            }
+            if (midIdx - offset >= 0 && g.degree(midIdx - offset) > 0) {
+                midIdx = midIdx - offset;
+                break;
+            }
+        }
+    }
+
+    if (hubIdx == -1 || periIdx == -1) {
+        std::cout << "  No hay suficientes nodos con aristas para perturbar.\n";
+        return;
     }
 
     std::string hub = g.getNodeName(hubIdx);
@@ -155,7 +181,7 @@ static void runExtendedPerturbations(const std::string &datasetName, Graph &g) {
         }
     }
 
-    // 2. Remover arista desde nodo periférico
+    // 2. Remover arista desde nodo periférico (garantizado grado > 0)
     if (!g.getNeighbors(periIdx).empty()) {
         std::string neigh =
             g.getNodeName(g.getNeighbors(periIdx)[0].destination);
@@ -166,19 +192,31 @@ static void runExtendedPerturbations(const std::string &datasetName, Graph &g) {
         }
     }
 
-    // 3. Agregar shortcut hub ↔ periferia
+    // 3. Agregar shortcut hub ↔ periferia (solo si no existe ya)
     if (!g.hasEdge(hub, peri)) {
         g.addEdge(hub, peri, 1.0);
         printDelta("ADD   hub↔peri (shortcut)", base, takeSnapshot(g));
         g.removeEdge(hub, peri);
         if (!g.getIsDirected())
             g.removeEdge(peri, hub);
+    } else {
+        std::cout << "  [ADD hub↔peri] Omitido: arista ya existe.\n";
+    }
+
+    // 4. Remover arista desde nodo medio
+    if (!g.getNeighbors(midIdx).empty()) {
+        std::string neigh =
+            g.getNodeName(g.getNeighbors(midIdx)[0].destination);
+        double w = g.getNeighbors(midIdx)[0].weight;
+        if (g.removeEdge(mid, neigh)) {
+            printDelta("REMOVE mid→" + neigh, base, takeSnapshot(g));
+            g.addEdge(mid, neigh, w);
+        }
     }
 
     printSeparator();
 }
 
-// Pipeline completo
 static void analyzeDataset(const std::string &label, Graph &g) {
     Benchmark::runMetricsBenchmark(label, g);
     runExtendedPerturbations(label, g);

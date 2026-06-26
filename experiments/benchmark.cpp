@@ -5,14 +5,37 @@
 #include <iomanip>
 #include <iostream>
 #include <numeric>
-
-#ifdef __linux__
-#include <fstream>
-#include <sys/types.h>
-#include <unistd.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
 #endif
 
 namespace Benchmark {
+
+long long getMemoryUsageKB() {
+#ifdef __linux__
+    std::ifstream stream("/proc/self/status");
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.substr(0, 6) == "VmRSS:") {
+            size_t i = 6;
+            while (i < line.size() && !isdigit(line[i]))
+                i++;
+            size_t j = i;
+            while (j < line.size() && isdigit(line[j]))
+                j++;
+            if (i < line.size())
+                return std::stoll(line.substr(i, j - i));
+        }
+    }
+#elif defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        return static_cast<long long>(pmc.WorkingSetSize / 1024);
+    }
+#endif
+    return -1;
+}
 
 MetricStats calculateStats(const std::vector<double> &times) {
     if (times.empty())
@@ -36,16 +59,14 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     std::cout << "Nodos (V): " << graph.getNumVertices()
               << " | Aristas (E): " << graph.getNumEdges() << "\n\n";
 
-    // SALVAVIDAS DE CPU:
-    const int RUNS_FAST = 10;
-    const int RUNS_HEAVY = (graph.getNumVertices() > 5000) ? 3 : 10;
+    const int RUNS = 10;
 
     std::vector<std::pair<std::string, MetricStats>> finalReport;
 
     // 1. Degree Centrality (Rápida)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_FAST; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             auto res =
                 Metrics::degreeCentrality(graph, Metrics::DegreeMode::Total);
@@ -59,7 +80,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     // 2. Betweenness Centrality (Lenta)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_HEAVY; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             auto res = Metrics::betweennessCentrality(graph);
             auto end = std::chrono::high_resolution_clock::now();
@@ -73,7 +94,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     // 3. Closeness Centrality (Lenta)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_HEAVY; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             auto res = Metrics::closenessCentrality(graph);
             auto end = std::chrono::high_resolution_clock::now();
@@ -86,7 +107,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     // 4. PageRank (Rápida)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_FAST; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             auto res = Metrics::pageRank(graph, 0.85, 100, 1e-6);
             auto end = std::chrono::high_resolution_clock::now();
@@ -99,7 +120,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     // 5. Average Shortest Path (Lenta)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_HEAVY; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             double res = Metrics::averageShortestPath(graph);
             auto end = std::chrono::high_resolution_clock::now();
@@ -112,7 +133,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     // 6. Local Clustering Coefficient (Rápida)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_FAST; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             auto res = Metrics::localClusteringCoefficient(graph);
             auto end = std::chrono::high_resolution_clock::now();
@@ -126,7 +147,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     // 7. Diámetro (Lenta)
     {
         std::vector<double> times;
-        for (int i = 0; i < RUNS_HEAVY; ++i) {
+        for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
             double res = Metrics::diametro(graph);
             auto end = std::chrono::high_resolution_clock::now();
