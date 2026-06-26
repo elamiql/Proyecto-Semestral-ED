@@ -1,4 +1,3 @@
-
 #include "../include/Graph.hpp"
 #include "../include/GraphLoader.hpp"
 #include "benchmark.hpp"
@@ -6,52 +5,61 @@
 #include <chrono>
 
 int main() {
-    const std::string imdbPath = "data/imdb_edgelist.csv";
-    const std::string iotPath  = "data/train_test_network.csv";
+    // Rutas relativas a tus dos datasets reales en formato Pajek (.net)
+    const std::string tradePath   = "data/2018.net.csv";
+    const std::string sciencePath = "data/NetScience.net.csv";
 
     std::cout << "==================================================\n";
     std::cout << " BENCHMARK INICIAL: VELOCIDAD DE CARGA Y MEMORIA   \n";
     std::cout << "==================================================\n";
 
-    // --- EXEC: IMDb Dataset ---
-    long long memBeforeIMDb = Benchmark::getMemoryUsageKB();
-    auto startIMDb = std::chrono::high_resolution_clock::now();
     
-    Graph g_imdb = GraphLoader::loadIMDb(imdbPath);
+    long long memBeforeTrade = Benchmark::getMemoryUsageKB();
+    auto startTrade = std::chrono::high_resolution_clock::now();
     
-    auto endIMDb = std::chrono::high_resolution_clock::now();
-    long long memAfterIMDb = Benchmark::getMemoryUsageKB();
-    double timeIMDb = std::chrono::duration<double, std::milli>(endIMDb - startIMDb).count();
+    
+    Graph g_trade = GraphLoader::loadPajekNet(tradePath, true);
+    
+    auto endTrade = std::chrono::high_resolution_clock::now();
+    long long memAfterTrade = Benchmark::getMemoryUsageKB();
+    double timeTrade = std::chrono::duration<double, std::milli>(endTrade - startTrade).count();
 
-    std::cout << "Dataset: IMDb Actors Network\n";
-    std::cout << "  - Tiempo de construcción: " << timeIMDb << " ms\n";
-    if (memBeforeIMDb != -1 && memAfterIMDb != -1) {
-        std::cout << "  - Asignación de RAM:      " << (memAfterIMDb - memBeforeIMDb) / 1024.0 << " MB\n";
+    std::cout << "Dataset: Comercio Internacional (2018)\n";
+    std::cout << "  - Tiempo de construcción: " << timeTrade << " ms\n";
+    if (memBeforeTrade != -1 && memAfterTrade != -1) {
+        std::cout << "  - Asignación de RAM:      " << (memAfterTrade - memBeforeTrade) / 1024.0 << " MB\n";
     }
     std::cout << "--------------------------------------------------\n";
 
-    // --- EXEC: IoT Network ---
-    long long memBeforeIoT = Benchmark::getMemoryUsageKB();
-    auto startIoT = std::chrono::high_resolution_clock::now();
     
-    Graph g_iot = GraphLoader::loadIoT(iotPath);
+    long long memBeforeScience = Benchmark::getMemoryUsageKB();
+    auto startScience = std::chrono::high_resolution_clock::now();
     
-    auto endIoT = std::chrono::high_resolution_clock::now();
-    long long memAfterIoT = Benchmark::getMemoryUsageKB();
-    double timeIoT = std::chrono::duration<double, std::milli>(endIoT - startIoT).count();
+    Graph g_science = GraphLoader::loadPajekNet(sciencePath, false);
+    
+    auto endScience = std::chrono::high_resolution_clock::now();
+    long long memAfterScience = Benchmark::getMemoryUsageKB();
+    double timeScience = std::chrono::duration<double, std::milli>(endScience - startScience).count();
 
-    std::cout << "Dataset: IoT Network Connections\n";
-    std::cout << "  - Tiempo de construcción: " << timeIoT << " ms\n";
-    if (memBeforeIoT != -1 && memAfterIoT != -1) {
-        std::cout << "  - Asignación de RAM:      " << (memAfterIoT - memBeforeIoT) / 1024.0 << " MB\n";
+    std::cout << "Dataset: Red de Coautorías Científicas (NetScience)\n";
+    std::cout << "  - Tiempo de construcción: " << timeScience << " ms\n";
+    if (memBeforeScience != -1 && memAfterScience != -1) {
+        std::cout << "  - Asignación de RAM:      " << (memAfterScience - memBeforeScience) / 1024.0 << " MB\n";
     }
+    std::cout << "--------------------------------------------------\n";
+
 
     
-    Benchmark::runMetricsBenchmark("IMDb Actores", g_imdb);
-    Benchmark::runPerturbations("IMDb Actores", g_imdb);
+    std::cout << "\n>>> ANALIZANDO GRAFO 1: COMERCIO INTERNACIONAL <<<\n";
+    Benchmark::runMetricsBenchmark("Trade Network 2018", g_trade);
+    Benchmark::runPerturbations("Trade Network 2018", g_trade);
 
-    Benchmark::runMetricsBenchmark("IoT Traffic", g_iot);
-    Benchmark::runPerturbations("IoT Traffic", g_iot);
+    std::cout << "\n==================================================\n";
+
+    
+    std::cout << "\n>>> ANALIZANDO GRAFO 2: COLABORACIÓN CIENTÍFICA <<<\n";
+    Benchmark::runMetricsBenchmark("NetScience Co-authorship", g_science);
+    Benchmark::runPerturbations("NetScience Co-authorship", g_science);
 
     return 0;
 }

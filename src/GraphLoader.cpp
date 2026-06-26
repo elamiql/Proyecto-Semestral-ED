@@ -290,4 +290,94 @@ Graph loadGeneric(const std::string &filepath, char sep, bool directed,
     return g;
 }
 
+Graph loadPajekNet(const std::string &filepath, bool directed) {
+    std::ifstream file(filepath);
+    if (!file.is_open())
+        throw std::runtime_error("loadPajekNet: no se pudo abrir " + filepath);
+
+    Graph g(directed);
+    std::string line;
+    
+   
+    std::vector<std::string> pajekIdToName;
+    
+    pajekIdToName.resize(2000, ""); 
+
+    bool readingVertices = false;
+    bool readingEdges = false;
+    int linesRead = 0;
+
+    while (std::getline(file, line)) {
+        line = trim(line);
+        if (line.empty() || line[0] == '#')
+            continue;
+
+       
+        if (line[0] == '*') {
+            std::string lowerLine = line;
+            for (char &c : lowerLine) c = tolower(c);
+            
+            if (lowerLine.find("vertices") != std::string::npos) {
+                readingVertices = true;
+                readingEdges = false;
+            } else if (lowerLine.find("arcs") != std::string::npos || lowerLine.find("edges") != std::string::npos) {
+                readingVertices = false;
+                readingEdges = true;
+            }
+            continue;
+        }
+
+        
+        if (readingVertices) {
+            std::istringstream ss(line);
+            int id;
+            std::string name;
+            if (ss >> id) {
+                ss >> std::ws;
+                
+                if (ss.peek() == '"') {
+                    ss.get(); 
+                    std::getline(ss, name, '"');
+                } else {
+                    ss >> name;
+                }
+                
+                
+                if (id >= (int)pajekIdToName.size()) {
+                    pajekIdToName.resize(id + 500, "");
+                }
+                
+                pajekIdToName[id] = name;
+                g.addVertex(name);
+            }
+        }
+        
+       
+        else if (readingEdges) {
+            std::istringstream ss(line);
+            int uId, vId;
+            double weight = 1.0;
+            if (ss >> uId >> vId) {
+                
+                ss >> weight; 
+                
+                
+                if (uId < (int)pajekIdToName.size() && vId < (int)pajekIdToName.size()) {
+                    std::string srcName = pajekIdToName[uId];
+                    std::string dstName = pajekIdToName[vId];
+                    
+                    if (!srcName.empty() && !dstName.empty()) {
+                        g.addEdge(srcName, dstName, weight);
+                        linesRead++;
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "[Pajek] Cargado: " << g.getNumVertices() << " vertices, "
+              << g.getNumEdges() << " aristas (" << linesRead << " lineas de red)\n";
+    return g;
+}
+
 }

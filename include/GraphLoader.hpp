@@ -52,4 +52,6 @@ Graph loadIMDb(const std::string &filepath);
 Graph loadGeneric(const std::string &filepath, char sep, bool directed,
                   bool hasWeight, int skipLines = 0);
 
+Graph loadPajekNet(const std::string &filepath, bool directed);
+
 }
