@@ -13,10 +13,7 @@ namespace {
 
 constexpr double kEpsilon = 1e-12;
 
-//  hasNegativeWeight
-//  Detecta si el grafo contiene alguna arista con peso negativo.
 bool hasNegativeWeight(const Graph &graph) {
-    // Recorre todas las aristas y se detiene apenas encuentra un peso negativo.
     for (int source = 0; source < graph.getNumVertices(); ++source) {
         for (const Edge &edge : graph.getNeighbors(source)) {
             if (edge.weight < 0.0) {
@@ -27,11 +24,7 @@ bool hasNegativeWeight(const Graph &graph) {
     return false;
 }
 
-//  hasUnitWeights
-//  Verifica si todas las aristas tienen peso 1.0 para usar BFS en vez de
-//  Dijkstra.
 bool hasUnitWeights(const Graph &graph) {
-    // Verifica si todas las aristas pesan 1.0 para poder usar BFS.
     for (int source = 0; source < graph.getNumVertices(); ++source) {
         for (const Edge &edge : graph.getNeighbors(source)) {
             if (std::fabs(edge.weight - 1.0) > kEpsilon) {
@@ -42,16 +35,11 @@ bool hasUnitWeights(const Graph &graph) {
     return true;
 }
 
-//  construirConjuntosDeVecinos
-//  Construye conjuntos de vecinos para calcular clustering local sin repetir
-//  nodos.
 std::vector<std::unordered_set<int>>
 construirConjuntosDeVecinos(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     std::vector<std::unordered_set<int>> neighbors(vertexCount);
 
-    // Carga vecinos salientes y, si el grafo es dirigido, también los
-    // entrantes.
     for (int source = 0; source < vertexCount; ++source) {
         for (const Edge &edge : graph.getNeighbors(source)) {
             if (edge.destination != source) {
@@ -66,25 +54,30 @@ construirConjuntosDeVecinos(const Graph &graph) {
     return neighbors;
 }
 
-//  calcularDistanciasBFS
-//  Calcula distancias mínimas en grafos con pesos unitarios.
-std::vector<double> calcularDistanciasBFS(const Graph &graph, int source) {
-    const int vertexCount = graph.getNumVertices();
-    std::vector<double> distancias(vertexCount,
-                                   std::numeric_limits<double>::infinity());
-    std::queue<int> queue;
+// ------------------------------------------------------------------
+// OPTIMIZACIÓN: estas dos funciones ahora reciben el vector de salida
+// `distancias` POR REFERENCIA en vez de crearlo y devolverlo por valor.
+// El caller (closenessCentrality / averageShortestPath / diametro) lo
+// declara UNA SOLA VEZ fuera del loop de nodos fuente, y aquí solo se
+// resetea con std::fill (que no libera/realoca memoria) en cada llamada.
+// Esto elimina V mallocs+frees redundantes (uno por cada nodo fuente)
+// sin cambiar el algoritmo ni el resultado. Sigue siendo 100% secuencial.
+// ------------------------------------------------------------------
 
-    // Marca el origen con distancia cero y empieza la expansión por capas.
+void calcularDistanciasBFS(const Graph &graph, int source,
+                           std::vector<double> &distancias) {
+    std::fill(distancias.begin(), distancias.end(),
+              std::numeric_limits<double>::infinity());
+
+    std::queue<int> queue;
     distancias[source] = 0.0;
     queue.push(source);
 
     while (!queue.empty()) {
-        // Toma el siguiente vértice descubierto.
         const int vertex = queue.front();
         queue.pop();
 
         for (const Edge &edge : graph.getNeighbors(vertex)) {
-            // Solo asigna distancia la primera vez que se visita el vecino.
             if (distancias[edge.destination] ==
                 std::numeric_limits<double>::infinity()) {
                 distancias[edge.destination] = distancias[vertex] + 1.0;
@@ -92,25 +85,20 @@ std::vector<double> calcularDistanciasBFS(const Graph &graph, int source) {
             }
         }
     }
-
-    return distancias;
 }
 
-//  calcularDistanciasDijkstra
-//  Calcula distancias mínimas en grafos ponderados con Dijkstra.
-std::vector<double> calcularDistanciasDijkstra(const Graph &graph, int source) {
-    const int vertexCount = graph.getNumVertices();
-    std::vector<double> distancias(vertexCount,
-                                   std::numeric_limits<double>::infinity());
+void calcularDistanciasDijkstra(const Graph &graph, int source,
+                                std::vector<double> &distancias) {
+    std::fill(distancias.begin(), distancias.end(),
+              std::numeric_limits<double>::infinity());
+
     using Item = std::pair<double, int>;
     std::priority_queue<Item, std::vector<Item>, std::greater<Item>> queue;
 
-    // Inicializa el origen y prioriza siempre el mejor camino conocido.
     distancias[source] = 0.0;
     queue.push({0.0, source});
 
     while (!queue.empty()) {
-        // Si aparece una entrada vieja, se ignora.
         const auto [distanciaActual, vertex] = queue.top();
         queue.pop();
 
@@ -118,7 +106,6 @@ std::vector<double> calcularDistanciasDijkstra(const Graph &graph, int source) {
             continue;
         }
 
-        // Relaja las aristas salientes con la nueva distancia acumulada.
         for (const Edge &edge : graph.getNeighbors(vertex)) {
             const double candidato = distanciaActual + edge.weight;
             if (candidato + kEpsilon < distancias[edge.destination]) {
@@ -127,14 +114,148 @@ std::vector<double> calcularDistanciasDijkstra(const Graph &graph, int source) {
             }
         }
     }
+}
 
-    return distancias;
+// ------------------------------------------------------------------
+// OPTIMIZACIÓN: betweennessBFS y betweennessDijkstra ahora reciben
+// stack/predecessors/sigma/distance/dependency POR REFERENCIA.
+// El caller (betweennessCentrality) los declara UNA SOLA VEZ fuera del
+// loop de 33k+ nodos fuente. Aquí adentro se resetean con .clear()/
+// std::fill en vez de reconstruirse — .clear() en un std::vector NO
+// libera la capacidad reservada, así que tras las primeras iteraciones
+// casi no hay más reallocations. Mismo algoritmo de Brandes, mismo
+// resultado, sin hilos, sin paralelismo: 100% secuencial.
+// ------------------------------------------------------------------
+
+void betweennessBFS(const Graph &graph, int source,
+                    std::vector<double> &centrality, std::vector<int> &stack,
+                    std::vector<std::vector<int>> &predecessors,
+                    std::vector<double> &sigma, std::vector<int> &distance,
+                    std::vector<double> &dependency) {
+    // Reset de buffers reutilizados (sin liberar memoria reservada)
+    stack.clear();
+    for (auto &p : predecessors) {
+        p.clear();
+    }
+    std::fill(sigma.begin(), sigma.end(), 0.0);
+    std::fill(distance.begin(), distance.end(), -1);
+    std::fill(dependency.begin(), dependency.end(), 0.0);
+
+    sigma[source] = 1.0;
+    distance[source] = 0;
+
+    std::queue<int> queue;
+    queue.push(source);
+
+    while (!queue.empty()) {
+        const int vertex = queue.front();
+        queue.pop();
+        stack.push_back(vertex);
+
+        for (const Edge &edge : graph.getNeighbors(vertex)) {
+            const int w = edge.destination;
+            // Primera vez que se visita w
+            if (distance[w] < 0) {
+                queue.push(w);
+                distance[w] = distance[vertex] + 1;
+            }
+            // Camino mínimo encontrado
+            if (distance[w] == distance[vertex] + 1) {
+                sigma[w] += sigma[vertex];
+                predecessors[w].push_back(vertex);
+            }
+        }
+    }
+
+    while (!stack.empty()) {
+        const int vertex = stack.back();
+        stack.pop_back();
+
+        for (int predecessor : predecessors[vertex]) {
+            if (sigma[vertex] > 0.0) {
+                dependency[predecessor] +=
+                    (sigma[predecessor] / sigma[vertex]) *
+                    (1.0 + dependency[vertex]);
+            }
+        }
+
+        if (vertex != source) {
+            centrality[vertex] += dependency[vertex];
+        }
+    }
+}
+
+void betweennessDijkstra(const Graph &graph, int source,
+                         std::vector<double> &centrality,
+                         std::vector<int> &stack,
+                         std::vector<std::vector<int>> &predecessors,
+                         std::vector<double> &sigma,
+                         std::vector<double> &distance,
+                         std::vector<double> &dependency) {
+    // Reset de buffers reutilizados (sin liberar memoria reservada)
+    stack.clear();
+    for (auto &p : predecessors) {
+        p.clear();
+    }
+    std::fill(sigma.begin(), sigma.end(), 0.0);
+    std::fill(distance.begin(), distance.end(),
+              std::numeric_limits<double>::infinity());
+    std::fill(dependency.begin(), dependency.end(), 0.0);
+
+    using Item = std::pair<double, int>;
+    std::priority_queue<Item, std::vector<Item>, std::greater<Item>> queue;
+
+    sigma[source] = 1.0;
+    distance[source] = 0.0;
+    queue.push({0.0, source});
+
+    while (!queue.empty()) {
+        const auto [currentDistance, vertex] = queue.top();
+        queue.pop();
+
+        if (currentDistance > distance[vertex] + kEpsilon) {
+            continue;
+        }
+
+        stack.push_back(vertex);
+
+        for (const Edge &edge : graph.getNeighbors(vertex)) {
+            const double candidate = distance[vertex] + edge.weight;
+
+            if (candidate + kEpsilon < distance[edge.destination]) {
+                distance[edge.destination] = candidate;
+                queue.push({candidate, edge.destination});
+                sigma[edge.destination] = sigma[vertex];
+                predecessors[edge.destination].clear();
+                predecessors[edge.destination].push_back(vertex);
+            } else if (std::fabs(candidate - distance[edge.destination]) <=
+                       kEpsilon) {
+                sigma[edge.destination] += sigma[vertex];
+                predecessors[edge.destination].push_back(vertex);
+            }
+        }
+    }
+
+    while (!stack.empty()) {
+        const int vertex = stack.back();
+        stack.pop_back();
+
+        for (int predecessor : predecessors[vertex]) {
+            if (sigma[vertex] > 0.0) {
+                dependency[predecessor] +=
+                    (sigma[predecessor] / sigma[vertex]) *
+                    (1.0 + dependency[vertex]);
+            }
+        }
+
+        if (vertex != source) {
+            centrality[vertex] += dependency[vertex];
+        }
+    }
 }
 
 } // namespace
 
-//  degreeCentrality
-//  Calcula la centralidad de grado de cada vértice según la modalidad indicada.
 std::vector<double> degreeCentrality(const Graph &graph, DegreeMode mode) {
     const int vertexCount = graph.getNumVertices();
     std::vector<double> centrality(vertexCount, 0.0);
@@ -142,10 +263,8 @@ std::vector<double> degreeCentrality(const Graph &graph, DegreeMode mode) {
         return centrality;
     }
 
-    // Normaliza por V - 1 para que el valor quede en una escala comparable.
     const double normalization = 1.0 / static_cast<double>(vertexCount - 1);
 
-    // Out usa el grado saliente almacenado por el ADT.
     if (mode == DegreeMode::Out) {
         for (int vertex = 0; vertex < vertexCount; ++vertex) {
             centrality[vertex] =
@@ -154,7 +273,6 @@ std::vector<double> degreeCentrality(const Graph &graph, DegreeMode mode) {
         return centrality;
     }
 
-    // En grafos no dirigidos, Total coincide con el grado ya almacenado.
     if (mode == DegreeMode::Total && !graph.getIsDirected()) {
         for (int vertex = 0; vertex < vertexCount; ++vertex) {
             centrality[vertex] =
@@ -163,8 +281,6 @@ std::vector<double> degreeCentrality(const Graph &graph, DegreeMode mode) {
         return centrality;
     }
 
-    // Para In y Total en grafos dirigidos, reconstruye el in-degree recorriendo
-    // las aristas.
     std::vector<int> inDegree(vertexCount, 0);
     for (int source = 0; source < vertexCount; ++source) {
         for (const Edge &edge : graph.getNeighbors(source)) {
@@ -186,8 +302,6 @@ std::vector<double> degreeCentrality(const Graph &graph, DegreeMode mode) {
     return centrality;
 }
 
-//  betweennessCentrality
-//  Calcula la centralidad de intermediación con el algoritmo de Brandes.
 std::vector<double> betweennessCentrality(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     std::vector<double> centrality(vertexCount, 0.0);
@@ -200,76 +314,28 @@ std::vector<double> betweennessCentrality(const Graph &graph) {
             "Metrics: betweennessCentrality requiere pesos no negativos");
     }
 
-    // Brandes (2001), weighted version using Dijkstra from each source.
-    // Repite el proceso tomando cada vértice como origen de caminos mínimos.
-    for (int source = 0; source < vertexCount; ++source) {
-        std::vector<int> stack;
-        stack.reserve(vertexCount);
+    // Usa BFS si todos los pesos son 1 (más rápido), Dijkstra si no.
+    const bool useBFS = hasUnitWeights(graph);
 
-        // predecessors guarda los predecesores en caminos mínimos.
-        std::vector<std::vector<int>> predecessors(vertexCount);
-        // sigma cuenta cuántos caminos mínimos llegan a cada vértice.
-        std::vector<double> sigma(vertexCount, 0.0);
-        // distance guarda la distancia mínima desde el origen actual.
-        std::vector<double> distance(vertexCount,
-                                     std::numeric_limits<double>::infinity());
+    // Buffers reutilizados entre las V llamadas (declarados UNA vez aquí).
+    std::vector<int> stack;
+    stack.reserve(vertexCount);
+    std::vector<std::vector<int>> predecessors(vertexCount);
+    std::vector<double> sigma(vertexCount, 0.0);
+    std::vector<double> dependency(vertexCount, 0.0);
 
-        using Item = std::pair<double, int>;
-        std::priority_queue<Item, std::vector<Item>, std::greater<Item>> queue;
-
-        sigma[source] = 1.0;
-        distance[source] = 0.0;
-        queue.push({0.0, source});
-
-        while (!queue.empty()) {
-            // Extrae el vértice con menor distancia pendiente.
-            const auto [currentDistance, vertex] = queue.top();
-            queue.pop();
-
-            if (currentDistance > distance[vertex] + kEpsilon) {
-                continue;
-            }
-
-            // Guarda el orden de finalización para la fase de acumulación.
-            stack.push_back(vertex);
-
-            // Relaja aristas y actualiza caminos mínimos y predecesores.
-            for (const Edge &edge : graph.getNeighbors(vertex)) {
-                const double candidate = distance[vertex] + edge.weight;
-
-                if (candidate + kEpsilon < distance[edge.destination]) {
-                    distance[edge.destination] = candidate;
-                    queue.push({candidate, edge.destination});
-                    sigma[edge.destination] = sigma[vertex];
-                    predecessors[edge.destination].clear();
-                    predecessors[edge.destination].push_back(vertex);
-                } else if (std::fabs(candidate - distance[edge.destination]) <=
-                           kEpsilon) {
-                    sigma[edge.destination] += sigma[vertex];
-                    predecessors[edge.destination].push_back(vertex);
-                }
-            }
+    if (useBFS) {
+        std::vector<int> distanceBFS(vertexCount, -1);
+        for (int source = 0; source < vertexCount; ++source) {
+            betweennessBFS(graph, source, centrality, stack, predecessors,
+                           sigma, distanceBFS, dependency);
         }
-
-        // Recorre la pila al revés para propagar la dependencia hacia atrás.
-        std::vector<double> dependency(vertexCount, 0.0);
-        while (!stack.empty()) {
-            const int vertex = stack.back();
-            stack.pop_back();
-
-            // Distribuye la dependencia entre los predecesores del vértice
-            // actual.
-            for (int predecessor : predecessors[vertex]) {
-                if (sigma[vertex] > 0.0) {
-                    dependency[predecessor] +=
-                        (sigma[predecessor] / sigma[vertex]) *
-                        (1.0 + dependency[vertex]);
-                }
-            }
-
-            if (vertex != source) {
-                centrality[vertex] += dependency[vertex];
-            }
+    } else {
+        std::vector<double> distanceDijkstra(
+            vertexCount, std::numeric_limits<double>::infinity());
+        for (int source = 0; source < vertexCount; ++source) {
+            betweennessDijkstra(graph, source, centrality, stack, predecessors,
+                                sigma, distanceDijkstra, dependency);
         }
     }
 
@@ -282,9 +348,6 @@ std::vector<double> betweennessCentrality(const Graph &graph) {
     return centrality;
 }
 
-//  closenessCentrality
-//  Calcula la centralidad de cercanía a partir de caminos mínimos desde cada
-//  nodo.
 std::vector<double> closenessCentrality(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     std::vector<double> centrality(vertexCount, 0.0);
@@ -292,26 +355,26 @@ std::vector<double> closenessCentrality(const Graph &graph) {
         return centrality;
     }
 
-    // Valida pesos negativos y decide BFS vs Dijkstra una sola vez (no en cada
-    // vértice).
     if (hasNegativeWeight(graph)) {
         throw std::invalid_argument(
             "Metrics: closenessCentrality requiere pesos no negativos");
     }
     const bool useBFS = hasUnitWeights(graph);
 
-    // Calcula la cercanía de cada vértice sumando sus distancias hacia los
-    // demás.
+    // Buffer reutilizado entre las V llamadas.
+    std::vector<double> distancias(vertexCount);
+
     for (int source = 0; source < vertexCount; ++source) {
-        const std::vector<double> distancias =
-            useBFS ? calcularDistanciasBFS(graph, source)
-                   : calcularDistanciasDijkstra(graph, source);
+        if (useBFS) {
+            calcularDistanciasBFS(graph, source, distancias);
+        } else {
+            calcularDistanciasDijkstra(graph, source, distancias);
+        }
+
         double reachable = 0.0;
         double sum = 0.0;
 
         for (int target = 0; target < vertexCount; ++target) {
-            // Ignora la distancia al propio nodo y solo acumula distancias
-            // finitas.
             if (target == source) {
                 continue;
             }
@@ -321,7 +384,6 @@ std::vector<double> closenessCentrality(const Graph &graph) {
             }
         }
 
-        // La centralidad es el inverso del promedio de distancias alcanzables.
         if (sum > 0.0 && reachable > 0.0) {
             centrality[source] = reachable / sum;
         }
@@ -330,9 +392,6 @@ std::vector<double> closenessCentrality(const Graph &graph) {
     return centrality;
 }
 
-//  pageRank
-//  Calcula PageRank por iteración hasta converger o alcanzar el máximo de
-//  iteraciones.
 std::vector<double> pageRank(const Graph &graph, double damping,
                              int maxIterations, double tolerance) {
     if (damping < 0.0 || damping > 1.0) {
@@ -350,33 +409,24 @@ std::vector<double> pageRank(const Graph &graph, double damping,
         return rank;
     }
 
-    // Parte con una distribución uniforme entre todos los vértices.
     std::fill(rank.begin(), rank.end(), 1.0 / static_cast<double>(vertexCount));
-    // La parte base evita que el rango desaparezca por completo en nodos
-    // aislados.
     const double baseRank = (1.0 - damping) / static_cast<double>(vertexCount);
 
-    // Calcula el out-degree de cada vértice para repartir el rango en cada
-    // iteración.
     std::vector<int> outDegree(vertexCount, 0);
     for (int vertex = 0; vertex < vertexCount; ++vertex) {
         outDegree[vertex] = graph.degree(vertex);
     }
 
     for (int iteration = 0; iteration < maxIterations; ++iteration) {
-        // Arranca la nueva iteración con el valor base en todos los vértices.
         std::vector<double> nextRank(vertexCount, baseRank);
         double danglingMass = 0.0;
 
         for (int vertex = 0; vertex < vertexCount; ++vertex) {
-            // Los vértices sin salidas acumulan masa que luego se reparte
-            // uniformemente.
             if (outDegree[vertex] == 0) {
                 danglingMass += rank[vertex];
                 continue;
             }
 
-            // Distribuye el rango del vértice entre sus vecinos salientes.
             const double share =
                 damping * rank[vertex] / static_cast<double>(outDegree[vertex]);
             for (const Edge &edge : graph.getNeighbors(vertex)) {
@@ -384,14 +434,12 @@ std::vector<double> pageRank(const Graph &graph, double damping,
             }
         }
 
-        // Reparte la masa colgante entre todos los nodos.
         const double danglingShare =
             damping * danglingMass / static_cast<double>(vertexCount);
         for (double &value : nextRank) {
             value += danglingShare;
         }
 
-        // Mide cuánto cambió la distribución para detectar convergencia.
         double delta = 0.0;
         for (int vertex = 0; vertex < vertexCount; ++vertex) {
             delta += std::fabs(nextRank[vertex] - rank[vertex]);
@@ -406,32 +454,32 @@ std::vector<double> pageRank(const Graph &graph, double damping,
     return rank;
 }
 
-//  averageShortestPath
-//  Calcula el promedio de distancias finitas entre todos los pares alcanzables.
 double averageShortestPath(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     if (vertexCount <= 1) {
         return 0.0;
     }
 
-    // Valida pesos negativos y decide BFS vs Dijkstra una sola vez (no en cada
-    // vértice).
     if (hasNegativeWeight(graph)) {
         throw std::invalid_argument(
             "Metrics: averageShortestPath requiere pesos no negativos");
     }
     const bool useBFS = hasUnitWeights(graph);
 
-    // Suma distancias finitas entre pares ordenados alcanzables.
+    // Buffer reutilizado entre las V llamadas.
+    std::vector<double> distancias(vertexCount);
+
     double totalDistance = 0.0;
     double pairCount = 0.0;
 
     for (int source = 0; source < vertexCount; ++source) {
-        const std::vector<double> distancias =
-            useBFS ? calcularDistanciasBFS(graph, source)
-                   : calcularDistanciasDijkstra(graph, source);
+        if (useBFS) {
+            calcularDistanciasBFS(graph, source, distancias);
+        } else {
+            calcularDistanciasDijkstra(graph, source, distancias);
+        }
+
         for (int target = 0; target < vertexCount; ++target) {
-            // Ignora el propio vértice y cualquier destino no alcanzable.
             if (target == source) {
                 continue;
             }
@@ -442,7 +490,6 @@ double averageShortestPath(const Graph &graph) {
         }
     }
 
-    // Devuelve el promedio global solo sobre las distancias válidas.
     if (pairCount == 0.0) {
         return 0.0;
     }
@@ -450,30 +497,30 @@ double averageShortestPath(const Graph &graph) {
     return totalDistance / pairCount;
 }
 
-//  diametro
-//  Calcula la distancia más larga entre pares conectados en la red.
 double diametro(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     if (vertexCount <= 1) {
         return 0.0;
     }
 
-    // Valida pesos negativos y decide BFS vs Dijkstra una sola vez (no en cada
-    // vértice).
     if (hasNegativeWeight(graph)) {
         throw std::invalid_argument(
             "Metrics: diametro requiere pesos no negativos");
     }
     const bool useBFS = hasUnitWeights(graph);
 
-    // Guarda la mayor distancia finita observada en toda la red.
+    // Buffer reutilizado entre las V llamadas.
+    std::vector<double> distancias(vertexCount);
+
     double maxDistance = 0.0;
     for (int source = 0; source < vertexCount; ++source) {
-        const std::vector<double> distancias =
-            useBFS ? calcularDistanciasBFS(graph, source)
-                   : calcularDistanciasDijkstra(graph, source);
+        if (useBFS) {
+            calcularDistanciasBFS(graph, source, distancias);
+        } else {
+            calcularDistanciasDijkstra(graph, source, distancias);
+        }
+
         for (double value : distancias) {
-            // Solo toma en cuenta vértices alcanzables desde el origen actual.
             if (std::isfinite(value)) {
                 maxDistance = std::max(maxDistance, value);
             }
@@ -483,8 +530,6 @@ double diametro(const Graph &graph) {
     return maxDistance;
 }
 
-//  localClusteringCoefficient
-//  Calcula el coeficiente de clustering local de cada vértice.
 std::vector<double> localClusteringCoefficient(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     std::vector<double> coefficient(vertexCount, 0.0);
@@ -492,20 +537,16 @@ std::vector<double> localClusteringCoefficient(const Graph &graph) {
         return coefficient;
     }
 
-    // Construye el vecindario de cada vértice para detectar triángulos rápido.
     const std::vector<std::unordered_set<int>> vecinos =
         construirConjuntosDeVecinos(graph);
 
     for (int vertex = 0; vertex < vertexCount; ++vertex) {
         const auto &vecinosAdyacentes = vecinos[vertex];
         const int degree = static_cast<int>(vecinosAdyacentes.size());
-        // Un vértice con menos de dos vecinos no puede formar triángulos.
         if (degree < 2) {
             continue;
         }
 
-        // Recorre cada par de vecinos y cuenta los que sí están conectados
-        // entre sí.
         std::vector<int> lista(vecinosAdyacentes.begin(),
                                vecinosAdyacentes.end());
         int links = 0;
@@ -515,8 +556,6 @@ std::vector<double> localClusteringCoefficient(const Graph &graph) {
                 const int izquierdo = lista[i];
                 const int derecho = lista[j];
 
-                // Se considera conectado si aparece en cualquiera de las dos
-                // direcciones.
                 bool conectado = vecinos[izquierdo].count(derecho) > 0 ||
                                  vecinos[derecho].count(izquierdo) > 0;
                 if (conectado) {
@@ -525,7 +564,6 @@ std::vector<double> localClusteringCoefficient(const Graph &graph) {
             }
         }
 
-        // Aplica la fórmula: 2 * enlaces reales / enlaces posibles.
         coefficient[vertex] =
             (2.0 * static_cast<double>(links)) /
             (static_cast<double>(degree) * static_cast<double>(degree - 1));

@@ -52,6 +52,16 @@ MetricStats calculateStats(const std::vector<double> &times) {
     return {mean, variance};
 }
 
+// Coeficiente de variación (%) = (desviación estándar / media) * 100
+// Calculado internamente a partir de la varianza; no se expone la
+// desviación estándar como columna separada en la tabla.
+double coefficientOfVariation(const MetricStats &stats) {
+    if (stats.mean == 0.0) {
+        return 0.0;
+    }
+    return (std::sqrt(stats.variance) / stats.mean) * 100.0;
+}
+
 void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
     std::cout << "\n==================================================\n";
     std::cout << " CRONOMETRANDO 7 MÉTRICAS: " << datasetName << "\n";
@@ -144,7 +154,7 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
             {"Local Clustering Coeff.", calculateStats(times)});
     }
 
-    // 7. Diámetro (Lenta)
+    // 7. Red Diameter (Lenta)
     {
         std::vector<double> times;
         for (int i = 0; i < RUNS; ++i) {
@@ -154,16 +164,18 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
             times.push_back(
                 std::chrono::duration<double, std::milli>(end - start).count());
         }
-        finalReport.push_back({"Diámetro de la Red", calculateStats(times)});
+        finalReport.push_back({"Red Diameter", calculateStats(times)});
     }
 
-    std::cout << "| Métrica | Tiempo Promedio (ms) | Varianza (ms²) |\n";
-    std::cout << "| :--- | :---: | :---: |\n";
+    std::cout
+        << "| Métrica | Tiempo Promedio (ms) | Varianza (ms²) | CV (%) |\n";
+    std::cout << "| :--- | :---: | :---: | :---: |\n";
     for (const auto &entry : finalReport) {
         std::cout << "| " << std::left << std::setw(26) << entry.first << " | "
                   << std::fixed << std::setprecision(4) << std::setw(20)
                   << entry.second.mean << " | " << std::setw(14)
-                  << entry.second.variance << " |\n";
+                  << entry.second.variance << " | " << std::setw(8)
+                  << coefficientOfVariation(entry.second) << " |\n";
     }
 }
 
