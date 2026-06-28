@@ -32,6 +32,6 @@ double averageShortestPath(const Graph &graph);
 std::vector<double> localClusteringCoefficient(const Graph &graph);
 
 // Calcula el diámetro de la red considerando distancias finitas.
-double diametro(const Graph &graph);
+double networkDiameter(const Graph &graph);
 
 }

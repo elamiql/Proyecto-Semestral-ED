@@ -57,7 +57,7 @@ construirConjuntosDeVecinos(const Graph &graph) {
 // ------------------------------------------------------------------
 // OPTIMIZACIÓN: estas dos funciones ahora reciben el vector de salida
 // `distancias` POR REFERENCIA en vez de crearlo y devolverlo por valor.
-// El caller (closenessCentrality / averageShortestPath / diametro) lo
+// El caller (closenessCentrality / averageShortestPath / networkDiameter) lo
 // declara UNA SOLA VEZ fuera del loop de nodos fuente, y aquí solo se
 // resetea con std::fill (que no libera/realoca memoria) en cada llamada.
 // Esto elimina V mallocs+frees redundantes (uno por cada nodo fuente)
@@ -497,7 +497,7 @@ double averageShortestPath(const Graph &graph) {
     return totalDistance / pairCount;
 }
 
-double diametro(const Graph &graph) {
+double networkDiameter(const Graph &graph) {
     const int vertexCount = graph.getNumVertices();
     if (vertexCount <= 1) {
         return 0.0;
@@ -505,7 +505,7 @@ double diametro(const Graph &graph) {
 
     if (hasNegativeWeight(graph)) {
         throw std::invalid_argument(
-            "Metrics: diametro requiere pesos no negativos");
+            "Metrics: Network Diameter requiere pesos no negativos");
     }
     const bool useBFS = hasUnitWeights(graph);
 

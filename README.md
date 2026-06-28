@@ -1,36 +1,40 @@
-# Proyecto semestral: Métricas de centralidad en redes
+# Proyecto Semestral: Métricas de Centralidad en Redes
+
+Implementación del ADT Grafo y cálculo de diversas métricas de centralidad para el análisis de redes complejas (grafos dirigidos y no dirigidos, con o sin peso). Desarrollado para la asignatura de Estructuras de Datos.
 
 ## Estructura del Proyecto
 
-```
+```text
 Proyecto_ED/
-├── data/           # Datasets
-├── docs/           # Informe y documentos
-├── experiments/
-│   └── benchmark.cpp # Experimento para las métricas
-├── include/
-│   ├── Graph.hpp   # Interfaz del ADT Grafo
-│   └── GraphLoader.hpp # Parsers para datasets
-├── src/
-│   ├── Graph.cpp   # Implementación del ADT Grafo
-│   ├── GraphLoader.cpp # Implementacion de parsers
-│   ├── Metrics.cpp # Las 7 medidas de centralidad
-│   └── main.cpp    # Carga de datasets y tests
-├── experiments/
-│   └── benchmark.cpp # Scripts de medición experimental
+├── data/                       # Datasets utilizados
+│   ├── imdb_edgelist.csv
+│   └── train_test_network.csv
+├── docs/                       # Informe y documentos
+│   └── Proyecto_Semestral_Métricas_de_Centralidad_en_Redes.pdf
+├── experiments/                # Scripts de medición experimental
+│   └── benchmark.cpp
+├── include/                    # Archivos de cabecera (Interfaces)
+│   ├── benchmark.hpp
+│   ├── Graph.hpp
+│   ├── GraphLoader.hpp
+│   └── Metrics.hpp
+├── src/                        # Código fuente (Implementaciones)
+│   ├── Graph.cpp
+│   ├── GraphLoader.cpp
+│   ├── main.cpp
+│   └── Metrics.cpp
+├── .gitignore
 ├── Makefile
 └── README.md
 ```
 
-## Compilar y ejecutar
+## Compilación y Ejecución
 
-```bash
-make
-proyecto_ed.exe
-make clean
-```
+**Nota sobre el rendimiento:** El cálculo completo de las métricas (especialmente aquellas basadas en caminos mínimos como Betweenness y Closeness) sobre datasets extensos como IMDb Actors toma aproximadamente 40 minutos en completarse debido a la complejidad computacional.
 
-o
+### En Linux (Ubuntu / macOS)
+
+Utiliza la herramienta `make` estándar:
 
 ```bash
 make
@@ -38,7 +42,9 @@ make
 make clean
 ```
 
-o
+### En Windows (MinGW)
+
+Si tienes el compilador GCC/MinGW instalado, utiliza:
 
 ```bash
 mingw32-make
@@ -46,14 +52,7 @@ proyecto_ed.exe
 mingw32-make clean
 ```
 
-o
-
-```bash
-g++ -std=c++17 -Wall -Wextra -O2 -Iinclude src\Graph.cpp src\GraphLoader.cpp src\main.cpp -o proyecto_ed.exe
-proyecto_ed.exe
-```
-
-## Métricas disponibles
+## Métricas Disponibles
 
 - `degreeCentrality`
 - `betweennessCentrality`
@@ -61,9 +60,9 @@ proyecto_ed.exe
 - `pageRank`
 - `averageShortestPath`
 - `localClusteringCoefficient`
-- `diametro`
+- `networkDiameter`
 
-## Integrantes
+## Integrantes (Grupo 10)
 
 - Ariel Cisternas
 - Agustín Salgado

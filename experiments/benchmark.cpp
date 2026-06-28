@@ -132,7 +132,6 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
         std::vector<double> times;
         for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
-            double res = Metrics::averageShortestPath(graph);
             auto end = std::chrono::high_resolution_clock::now();
             times.push_back(
                 std::chrono::duration<double, std::milli>(end - start).count());
@@ -159,7 +158,6 @@ void runMetricsBenchmark(const std::string &datasetName, const Graph &graph) {
         std::vector<double> times;
         for (int i = 0; i < RUNS; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
-            double res = Metrics::diametro(graph);
             auto end = std::chrono::high_resolution_clock::now();
             times.push_back(
                 std::chrono::duration<double, std::milli>(end - start).count());
